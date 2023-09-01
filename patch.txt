@@ -9,4 +9,4 @@ packages/apps/Settings
 packages/apps/SetupWizard
 vendor/addons
 vendor/lineage
-patch/patch.txt
+external/roboto-fonts
