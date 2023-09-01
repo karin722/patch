@@ -1,0 +1,168 @@
+diff --git a/arch/arm64/configs/cloudripper_gki_defconfig b/arch/arm64/configs/cloudripper_gki_defconfig
+index d1cca23398bd..b2504bb120b5 100644
+--- a/arch/arm64/configs/cloudripper_gki_defconfig
++++ b/arch/arm64/configs/cloudripper_gki_defconfig
+@@ -879,3 +879,4 @@ CONFIG_ZRAM=m
+ CONFIG_ZRAM_WRITEBACK=y
+ CONFIG_ZSMALLOC=m
+ CONFIG_PIXEL_METRICS=m
++CONFIG_FORCE_FAST_CHARGE=y
+diff --git a/arch/arm64/configs/slider_gki_defconfig b/arch/arm64/configs/slider_gki_defconfig
+index 2f47af077123..4b57a1d87ff8 100644
+--- a/arch/arm64/configs/slider_gki_defconfig
++++ b/arch/arm64/configs/slider_gki_defconfig
+@@ -886,3 +886,4 @@ CONFIG_PPS_CLIENT_GPIO=m
+ # CONFIG_MODULE_SIG is not set
+ CONFIG_BOOT_CONTROL=m
+ CONFIG_PIXEL_METRICS=m
++CONFIG_FORCE_FAST_CHARGE=y
+diff --git a/arch/arm64/configs/tangorpro_gki_defconfig b/arch/arm64/configs/tangorpro_gki_defconfig
+index 0681754c093b..5991fcebe631 100644
+--- a/arch/arm64/configs/tangorpro_gki_defconfig
++++ b/arch/arm64/configs/tangorpro_gki_defconfig
+@@ -889,3 +889,4 @@ CONFIG_SUSPEND_DURING_VOICE_CALL=n
+ CONFIG_PWM_SAMSUNG=m
+ CONFIG_LEDS_PWM=m
+ CONFIG_USB_FEW_INIT_RETRIES=y
++CONFIG_FORCE_FAST_CHARGE=y
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index 9d3d6ce0353b..a4de3c9e02f6 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -536,6 +536,12 @@ config ACCESS_RAMOOPS
+ 	  To compile this driver as a module, choose M here: the module will be
+ 	  called access_ramoops.
+ 
++config FORCE_FAST_CHARGE
++	bool "Force faster charge rate for USB"
++	default y
++	help
++	  This allows users to override default charge rate for USB
++
+ source "drivers/misc/c2port/Kconfig"
+ source "drivers/misc/eeprom/Kconfig"
+ source "drivers/misc/cb710/Kconfig"
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index 1ae24bdc2794..c1a057d80245 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -66,3 +66,5 @@ obj-$(CONFIG_SBB_MUX)		+= sbb-mux/
+ obj-$(CONFIG_SUBSYSTEM_COREDUMP)	+= sscoredump/
+ obj-$(CONFIG_ACCESS_RAMOOPS)	+= access_ramoops.o
+ obj-$(CONFIG_BCM_GPS_SPI_DRIVER)   += bbdpl/
++
++obj-$(CONFIG_FORCE_FAST_CHARGE) += fastchg.o
+diff --git a/drivers/misc/fastchg.c b/drivers/misc/fastchg.c
+new file mode 100644
+index 000000000000..fe12fb2587ca
+--- /dev/null
++++ b/drivers/misc/fastchg.c
+@@ -0,0 +1,78 @@
++/*
++ * Author (legacy sysfs): Chad Froebel <chadfroebel@gmail.com>
++ *
++ * Additional fixes, port to raviole and power supply hooks: engstk <eng.stk@sapo.pt>
++ *
++ * This software is licensed under the terms of the GNU General Public
++ * License version 2, as published by the Free Software Foundation, and
++ * may be copied, distributed, and modified under those terms.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ */
++
++/*
++ * Possible values for "force_fast_charge" are :
++ *
++ *   0 - Disabled (default)
++ *   1 - Force faster charge
++ */
++
++#include <linux/kobject.h>
++#include <linux/sysfs.h>
++#include <linux/string.h>
++#include <linux/module.h>
++
++int force_fast_charge = 0;
++EXPORT_SYMBOL(force_fast_charge);
++
++static ssize_t force_fast_charge_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
++{
++	return sprintf(buf, "%d\n", force_fast_charge);
++}
++
++static ssize_t force_fast_charge_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
++{
++	sscanf(buf, "%du", &force_fast_charge);
++	if (force_fast_charge < 0 || force_fast_charge > 1)
++		force_fast_charge = 0;
++	return count;
++}
++
++static struct kobj_attribute force_fast_charge_attribute =
++__ATTR(force_fast_charge, 0644, force_fast_charge_show, force_fast_charge_store);
++
++static struct attribute *attrs[] = {
++&force_fast_charge_attribute.attr,
++NULL,
++};
++
++static struct attribute_group attr_group = {
++.attrs = attrs,
++};
++
++static struct kobject *force_fast_charge_kobj;
++
++int force_fast_charge_init(void)
++{
++	int retval;
++        force_fast_charge_kobj = kobject_create_and_add("fast_charge", kernel_kobj);
++        if (!force_fast_charge_kobj) {
++                return -ENOMEM;
++        }
++        retval = sysfs_create_group(force_fast_charge_kobj, &attr_group);
++        if (retval)
++                kobject_put(force_fast_charge_kobj);
++        return retval;
++}
++
++void force_fast_charge_exit(void)
++{
++	kobject_put(force_fast_charge_kobj);
++}
++
++module_init(force_fast_charge_init);
++module_exit(force_fast_charge_exit);
+diff --git a/drivers/usb/typec/tcpm/google/bc_max77759.c b/drivers/usb/typec/tcpm/google/bc_max77759.c
+index 78f786264699..111a4e1f4fe5 100644
+--- a/drivers/usb/typec/tcpm/google/bc_max77759.c
++++ b/drivers/usb/typec/tcpm/google/bc_max77759.c
+@@ -19,6 +19,10 @@
+ #include "../tcpci.h"
+ #include "tcpci_max77759.h"
+ 
++#if IS_ENABLED(CONFIG_FORCE_FAST_CHARGE)
++extern bool force_fast_charge;
++#endif
++
+ struct bc12_status {
+ 	struct workqueue_struct *wq;
+ 	struct max77759_plat *chip;
+@@ -101,7 +105,14 @@ static void vendor_bc12_alert(struct work_struct *work)
+ 			logbuffer_log(plat->log, "BC12: nothing attached");
+ 			break;
+ 		case CHGTYP_SDP:
++#if IS_ENABLED(CONFIG_FORCE_FAST_CHARGE)
++			if (force_fast_charge == 0)
++				bc12->usb_type = POWER_SUPPLY_USB_TYPE_SDP;
++			else
++				bc12->usb_type = POWER_SUPPLY_USB_TYPE_CDP;
++#else
+ 			bc12->usb_type = POWER_SUPPLY_USB_TYPE_SDP;
++#endif
+ 			logbuffer_log(plat->log, "BC12: SDP detected");
+ 			break;
+ 		case CHGTYP_CDP:

@@ -10,3 +10,6 @@ packages/apps/SetupWizard
 vendor/addons
 vendor/lineage
 external/roboto-fonts
+device/google/bluejay
+vendor/google/bluejay
+kernel/google/gs201/private/gs-google
