@@ -482,7 +482,7 @@ index c57de12..1c110a7 100644
  <resources>
      <!-- Don't need the left side padding due to being inset from the cutout -->
 -    <dimen name="status_bar_padding_start">0dp</dimen>
-+    <dimen name="status_bar_padding_start">18dp</dimen>
++    <dimen name="status_bar_padding_start">16dp</dimen>
 +    <dimen name="status_bar_padding_end">12dp</dimen>
  
      <!-- the padding on the top of the statusbar (usually 0) -->
